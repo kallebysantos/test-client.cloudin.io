@@ -1,0 +1,88 @@
+﻿@using BirdMessenger
+@using BirdMessenger.Collections
+@inject ITusClient _tusClient
+
+@page "/"
+
+<PageTitle>Index</PageTitle>
+
+<div class="d-flex flex-column gap-4">
+  <h1>Hello, world!</h1>
+
+  Welcome to your new app.
+
+  <InputFile OnChange="@LoadFiles" />
+
+</div>
+
+@code {
+  private static string token =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOiI3ODBlNDE2Mi05ZjAzLTQyYjgtOTc4NC05YmYyMDIzNmFkODEiLCJGb2xkZXJJZCI6IjZhNzA4YThhLWNlZjItNGE3Yy05YzQ4LTcxZDJlM2UxNzAxYSIsIkZpbGVOYW1lIjoiZG9jdW1lbnQucGRmIiwibmJmIjoxNjY5NjcyNjA3LCJleHAiOjE2NzAyNzc0MDcsImlhdCI6MTY2OTY3MjYwN30.Fne3xlzqLnIjbq_b7kpZ3VeHPMf4CNvFRIecRvaKba0";
+
+  private async Task LoadFiles(InputFileChangeEventArgs e)
+  {
+    var uploadUri = new UriBuilder
+    {
+      Scheme = "http",
+      Host = "localhost",
+      Port = 5000,
+      Path = "/api/upload",
+      Query = $"token={token}"
+    };
+
+    var metadata = new MetadataCollection();
+    metadata["name"] = e.File.Name;
+    metadata["contentType"] = e.File.ContentType;
+
+    var createRequestOption = new TusCreateRequestOption()
+    {
+      Metadata = metadata,
+      Endpoint = uploadUri.Uri,
+      UploadLength = e.File.Size,
+    };
+
+    var createResponse = await _tusClient.TusCreateAsync(createRequestOption);
+
+    var patchRequestOption = new TusPatchRequestOption
+    {
+      FileLocation = createResponse.FileLocation,
+      Stream = e.File.OpenReadStream(),
+
+      //UploadBufferSize = 2*1024*1024, // upload size ,default value is 1MB
+      //UploadType = UploadType.Chunk, // setting upload file with Stream or chunk ,default value is Stream
+
+      OnProgressAsync = e =>
+      {
+        var uploadedProgress = (int)Math.Floor(100 * (double)e.UploadedSize / e.TotalSize);
+
+        Console.WriteLine($"OnProgressAsync-TotalSize:{e.TotalSize}-UploadedSize:{e.UploadedSize}-uploadedProgress:{uploadedProgress}");
+
+        return Task.CompletedTask;
+      },
+      OnCompletedAsync = e =>
+      {
+        var tusPatchRequest = e.TusRequestOption as TusPatchRequestOption;
+
+        Console.WriteLine($"File:{tusPatchRequest?.FileLocation} Completed ");
+
+        return Task.CompletedTask;
+      },
+      OnFailedAsync = e =>
+      {
+        Console.WriteLine($"error: {e.Exception.Message}");
+        if (e.OriginHttpRequestMessage != null)
+        {
+          //log httpRequest
+        }
+
+        if (e.OriginResponseMessage != null)
+        {
+          //log response
+        }
+        return Task.CompletedTask;
+      }
+    };
+
+    var patchResponse = await _tusClient.TusPatchAsync(patchRequestOption);
+  }
+}
